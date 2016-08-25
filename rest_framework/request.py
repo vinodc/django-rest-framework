@@ -418,3 +418,8 @@ class Request(object):
         Proxy other attributes to the underlying HttpRequest object.
         """
         return getattr(self._request, attr)
+
+    def force_plaintext_errors(self, value):
+        # Hack to allow our exception handler to force choice of
+        # plaintext or html error responses.
+        self._request.is_ajax = lambda: value
