@@ -3,6 +3,7 @@ Provides an APIView class that is the base of all views in REST framework.
 """
 from __future__ import unicode_literals
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.views.decorators.csrf import csrf_exempt
@@ -45,7 +46,7 @@ def get_view_description(view_cls, html=False):
     return description
 
 
-def exception_handler(exc):
+def exception_handler(exc, context):
     """
     Returns the response that should be used for any given exception.
 
@@ -172,6 +173,18 @@ class APIView(View):
         """
         # Note: Additionally 'response' will also be added to the context,
         #       by the Response object.
+        return {
+            'view': self,
+            'args': getattr(self, 'args', ()),
+            'kwargs': getattr(self, 'kwargs', {}),
+            'request': getattr(self, 'request', None)
+        }
+
+    def get_exception_handler_context(self):
+        """
+        Returns a dict that is passed through to EXCEPTION_HANDLER,
+        as the `context` argument.
+        """
         return {
             'view': self,
             'args': getattr(self, 'args', ()),
@@ -364,13 +377,24 @@ class APIView(View):
             else:
                 exc.status_code = status.HTTP_403_FORBIDDEN
 
-        response = self.settings.EXCEPTION_HANDLER(exc)
+        exception_handler = self.settings.EXCEPTION_HANDLER
+
+        context = self.get_exception_handler_context()
+        response = exception_handler(exc, context)
 
         if response is None:
-            raise
+            self.raise_uncaught_exception(exc)
 
         response.exception = True
         return response
+
+    def raise_uncaught_exception(self, exc):
+        if settings.DEBUG:
+            request = self.request
+            renderer_format = getattr(request.accepted_renderer, 'format')
+            use_plaintext_traceback = renderer_format not in ('html', 'api', 'admin')
+            request.force_plaintext_errors(use_plaintext_traceback)
+        raise
 
     # Note: Views are made CSRF exempt from within `as_view` as to prevent
     # accidental removal of this exemption in cases where `dispatch` needs to
